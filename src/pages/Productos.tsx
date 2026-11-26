@@ -16,7 +16,7 @@ function matchesPrice(price: number, filter: string) {
 
 export default function Productos() {
   usePage("Clinica NutriDifs | Productos");
-  const { products, categories } = useApp();
+  const { products, categories, catalogLoading, catalogError, reloadCatalog } = useApp();
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("todos");
   const [priceFilter, setPriceFilter] = useState("todos");
@@ -99,6 +99,16 @@ export default function Productos() {
           <div className="products-catalog">
             <div className="catalogo-header">
               <h1 id="products-title">Catálogo Farmacéutico Veterinario</h1>
+              {/* El catálogo viene de la API (/api/v1/products) */}
+              {catalogLoading && <p role="status">Cargando productos...</p>}
+              {catalogError && (
+                <div className="alert alert-danger d-flex justify-content-between align-items-center" role="alert">
+                  <span>{catalogError}</span>
+                  <button type="button" className="btn btn-sm btn-outline-danger" onClick={() => void reloadCatalog()}>
+                    Reintentar
+                  </button>
+                </div>
+              )}
               <p>
                 Encuentra medicamentos, antiparasitarios y vacunas certificadas
                 para tus mascotas.

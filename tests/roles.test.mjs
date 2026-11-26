@@ -58,91 +58,11 @@ const { renderToStaticMarkup } = require("react-dom/server");
 const { AppProvider } = require("../src/context/AppProvider.tsx");
 const { useApp } = require("../src/context/AppContext.ts");
 const { matchesProductName } = require("../src/utils/productSearch.ts");
-test("vendedor crea y edita productos y stock, pero no administra usuarios ni elimina productos", () => {
-  const previous = Object.getOwnPropertyDescriptor(globalThis, "localStorage");
-  const storage = new Map();
-  Object.defineProperty(globalThis, "localStorage", { configurable: true, value: {
-    getItem: key => storage.get(key) ?? null,
-    setItem: (key, value) => storage.set(key, value),
-    removeItem: key => storage.delete(key),
-  } });
-  try {
-    storage.set("clinica-nutridifs-profiles", JSON.stringify([{ ...user, role: "Vendedor" }]));
-    guardarSesion(storage, { ...user, role: "Vendedor" });
-    let app;
-    function Probe() { app = useApp(); return null; }
-    const refresh = () => renderToStaticMarkup(createElement(AppProvider, null, createElement(Probe)));
-    refresh();
-    const product = { ...app.products[0], id: "prueba-vendedor", name: "Producto nuevo", distributor: "VetSur", price: 1000, stock: 2 };
-    app.saveProduct(product);
-    refresh();
-    assert.equal(app.products.find(p => p.id === product.id).name, "Producto nuevo");
-    app.saveProduct({ ...product, name: "Producto editado", price: 2000 });
-    refresh();
-    assert.equal(app.products.find(p => p.id === product.id).price, 2000);
-    app.updateStock(product.id, 7);
-    refresh();
-    assert.equal(app.products.find(p => p.id === product.id).stock, 7);
-    assert.throws(() => app.manageUser(user), /permiso/);
-    assert.throws(() => app.manageUser(user, user.email), /permiso/);
-    assert.throws(() => app.deleteUser(user.email), /permiso/);
-    assert.throws(() => app.deleteProduct(product.id), /permiso/);
-    assert.throws(() => app.saveCategory("NUEVA"), /permiso/);
-  } finally {
-    if (previous) Object.defineProperty(globalThis, "localStorage", previous);
-    else delete globalThis.localStorage;
-  }
-});
 test("búsqueda por nombre admite coincidencias parciales, tildes, mayúsculas y espacios", () => {
   assert.equal(matchesProductName("Antibiótico Veterinario", "  ANTIBIOTICO  "), true);
   assert.equal(matchesProductName("Antibiótico Veterinario", "veter"), true);
   assert.equal(matchesProductName("Vacuna", ""), true);
   assert.equal(matchesProductName("Vacuna", "antibiotico"), false);
-});
-
-test("todos los roles editan su perfil, conservan credenciales y persisten el correo nuevo", async () => {
-  const previous = Object.getOwnPropertyDescriptor(globalThis, "localStorage");
-  const storage = new Map();
-  Object.defineProperty(globalThis, "localStorage", { configurable: true, value: {
-    getItem: key => storage.get(key) ?? null,
-    setItem: (key, value) => storage.set(key, value),
-    removeItem: key => storage.delete(key),
-  } });
-  try {
-    let app;
-    function Probe() { app = useApp(); return null; }
-    const refresh = () => renderToStaticMarkup(createElement(AppProvider, null, createElement(Probe)));
-    for (const role of ["Cliente", "Vendedor", "Administrador"]) {
-      const other = { ...user, email: "otro@duoc.cl", password: "Otra123" };
-      storage.set("clinica-nutridifs-profiles", JSON.stringify([{ ...user, role }, other]));
-      guardarSesion(storage, { ...user, role });
-      refresh();
-      for (const patch of [{ name: "" }, { apellido: "" }, { email: "a@example.com" }, { birthDate: "2020-01-01" }, { phone: "1234" }, { direccion: "" }, { region: "" }, { comuna: "" }, { genero: "" }]) {
-        assert.throws(() => app.updateProfile({ ...user, ...patch }));
-      }
-      assert.throws(() => app.updateProfile({ ...user, email: "OTRO@DUOC.CL" }), /registrado/);
-      app.updateProfile({ ...user, name: " Editado ", email: "NUEVO@DUOC.CL", direccion: "Nueva 123", password: "Cambiada123", role: "Administrador", locked: true });
-      refresh();
-      const updated = app.profiles.find(p => p.email === "nuevo@duoc.cl");
-      assert.equal(updated.name, "Editado");
-      assert.equal(updated.direccion, "Nueva 123");
-      assert.equal(updated.password, user.password);
-      assert.equal(updated.role, role);
-      assert.equal(updated.locked, false);
-      assert.equal(app.session.role, role);
-      assert.equal(app.session.email, "nuevo@duoc.cl");
-      assert.deepEqual(app.profiles.find(p => p.email === other.email), other);
-      // Cerrar sesión borra la sesión y los tokens (el login ahora es contra la API)
-      await app.logout();
-      refresh();
-      assert.equal(app.session, null);
-      assert.equal(storage.has("clinica-nutridifs-token"), false);
-      assert.throws(() => app.updateProfile(user), /sesión/);
-    }
-  } finally {
-    if (previous) Object.defineProperty(globalThis, "localStorage", previous);
-    else delete globalThis.localStorage;
-  }
 });
 
 // Render every public route with realistic persisted sessions, without touching browser data.
@@ -167,7 +87,6 @@ for (const role of [null, "Cliente", "Vendedor", "Administrador"]) {
         const html = renderToStaticMarkup(createElement(MemoryRouter, { initialEntries: [route] }, createElement(AppProvider, null, createElement(App))));
         assert.match(html, /<h[12][ >]/, route);
         assert.doesNotMatch(html, /NaN|\[object Object\]/, route);
-        if (route === "/perfil") assert.equal(html.includes("Editar perfil"), !!role);
       }
       for (const route of ["/administrar", "/vendedor"]) {
         const html = renderToStaticMarkup(createElement(MemoryRouter, { initialEntries: [route] }, createElement(AppProvider, null, createElement(App))));
@@ -247,49 +166,6 @@ function withAppStorage(run) {
 const stockProduct = { id: "stock-test", name: "Producto prueba", price: 1000, stock: 2, category: "VACUNAS", image: "", principio: "", especie: "", distributor: "VetSur" };
 const cartFor = (quantity = 2) => [{ code: stockProduct.id, name: stockProduct.name, price: 1000, image: "", quantity }];
 
-test("sin sesión no se puede comprar", () => withAppStorage((storage, refresh) => {
-  storage.set("admin-products", JSON.stringify([stockProduct]));
-  storage.set("carrito", JSON.stringify(cartFor()));
-  assert.throws(() => refresh().checkout(cartFor()), /iniciar sesión/);
-  assert.equal(JSON.parse(storage.get("admin-products"))[0].stock, 2);
-}));
-
-test("confirmar descuenta stock, persiste el agotamiento y no duplica la compra", () => withAppStorage((storage, refresh) => {
-  guardarSesion(storage, { ...user, role: "Cliente" });
-  storage.set("admin-products", JSON.stringify([stockProduct]));
-  storage.set("carrito", JSON.stringify(cartFor()));
-  const app = refresh();
-  assert.equal(app.products[0].stock, 2);
-  app.checkout(cartFor());
-  assert.equal(JSON.parse(storage.get("admin-products"))[0].stock, 0);
-  assert.deepEqual(JSON.parse(storage.get("carrito")), []);
-  assert.throws(() => app.checkout(cartFor()), /vacío|confirmada/);
-  assert.equal(refresh().addToCart(stockProduct.id), false);
-}));
-
-test("compra con stock insuficiente no modifica ningún producto ni el carrito", () => withAppStorage((storage, refresh) => {
-  const inventory = [stockProduct, { ...stockProduct, id: "other", stock: 0 }];
-  const cart = [...cartFor(1), { ...cartFor(1)[0], code: "other" }];
-  guardarSesion(storage, { ...user, role: "Cliente" });
-  storage.set("admin-products", JSON.stringify(inventory));
-  storage.set("carrito", JSON.stringify(cart));
-  assert.throws(() => refresh().checkout(cart), /insuficiente/);
-  assert.deepEqual(JSON.parse(storage.get("admin-products")), inventory);
-  assert.deepEqual(JSON.parse(storage.get("carrito")), cart);
-}));
-
-test("compra rechaza cambios de carrito, precios y cantidades inválidas", () => withAppStorage((storage, refresh) => {
-  guardarSesion(storage, { ...user, role: "Cliente" });
-  storage.set("admin-products", JSON.stringify([stockProduct]));
-  storage.set("carrito", JSON.stringify(cartFor(1)));
-  assert.throws(() => refresh().checkout(cartFor(2)), /cambió/);
-  const expensive = [{ ...stockProduct, price: 2000 }];
-  storage.set("admin-products", JSON.stringify(expensive));
-  assert.throws(() => refresh().checkout(cartFor(1)), /precio cambió/);
-  storage.set("carrito", JSON.stringify(cartFor(0.5)));
-  assert.throws(() => refresh().checkout(cartFor(0.5)), /Cantidad inválida/);
-}));
-
 test("crear exige stock positivo y editar permite agotado", () => {
   assert.throws(() => validateProduct({ ...stockProduct, stock: 0 }, ["VACUNAS"], true), /al menos 1/);
   assert.doesNotThrow(() => validateProduct({ ...stockProduct, stock: 0 }, ["VACUNAS"], false));
@@ -318,6 +194,8 @@ test("administrador inicial se crea una vez sin duplicar ni sobrescribir cambios
 });
 
 // El login, los intentos fallidos y el bloqueo ahora los valida el backend
+// La compra, el stock, los productos y los usuarios también viven en la API: se prueban en el
+// backend (ReceiptServiceTest, ProductServiceTest, CategoryServiceTest, AuthServiceTest).
 // (ver AuthServiceTest en miapi-backend-nutrivfis). Aquí se prueba la sesión del lado del frontend.
 const { rolDesdeApi, sesionDesdeApi } = require("../src/utils/roles.ts");
 
@@ -340,37 +218,3 @@ test("los roles de la API se traducen y la sesión no guarda la contraseña", ()
   assert.deepEqual(session, { name: "Ana", apellido: "Pérez", email: "ana@gmail.com", birthDate: "2000-01-01", phone: "", role: "Vendedor" });
   assert.equal("password" in session || "token" in session, false);
 });
-
-test("un cliente no puede gestionar productos ni stock", () => withAppStorage((storage, refresh) => {
-  guardarSesion(storage, { ...user, role: "Cliente" });
-  const app = refresh();
-  assert.throws(() => app.updateStock(stockProduct.id, 4), /permiso/);
-  assert.throws(() => app.saveProduct(stockProduct), /permiso/);
-}));
-
-test("ambos roles gestionan stock y rechazan altas sin existencias", () => withAppStorage((storage, refresh) => {
-  for (const role of ["Vendedor", "Administrador"]) {
-    storage.set("clinica-nutridifs-profiles", JSON.stringify([{ ...user, role }]));
-    guardarSesion(storage, { ...user, role });
-    storage.set("admin-products", JSON.stringify([stockProduct]));
-    let app = refresh();
-    assert.throws(() => app.saveProduct({ ...stockProduct, id: "new", stock: 0 }), /al menos 1/);
-    app.updateStock(stockProduct.id, 0);
-    app = refresh();
-    assert.equal(app.products[0].stock, 0);
-    app.updateStock(stockProduct.id, 5);
-    assert.equal(refresh().products[0].stock, 5);
-    assert.throws(() => refresh().updateStock(stockProduct.id, -1));
-  }
-}));
-
-test("el administrador inicial puede editar sus datos sin inventar apellido", () => withAppStorage((storage, refresh) => {
-  storage.set("clinica-nutridifs-profiles", JSON.stringify([DEFAULT_ADMIN]));
-  storage.set(ADMIN_SEED_KEY, "true");
-  guardarSesion(storage, { email: DEFAULT_ADMIN.email, name: DEFAULT_ADMIN.name, apellido: "", role: "Administrador" });
-  refresh().updateProfile({ ...DEFAULT_ADMIN, direccion: "Nueva 123" });
-  const app = refresh();
-  assert.equal(app.profiles[0].direccion, "Nueva 123");
-  assert.equal(app.profiles[0].apellido, "");
-  assert.equal(app.session.role, "Administrador");
-}));

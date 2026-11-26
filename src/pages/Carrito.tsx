@@ -4,10 +4,11 @@ import { useApp } from "../context/AppContext";
 import { usePage } from "../hooks/usePage";
 import { formatCurrency } from "../utils/format";
 import { loginConRetorno } from "../utils/redireccion";
+import { mensajeDeError } from "../api/errores";
 
 type Notice = {
   message: string;
-  onConfirm?: () => void;
+  onConfirm?: () => void | Promise<void>;
   // Botón principal distinto de "Confirmar" (ej. "Iniciar sesión")
   action?: { label: string; onClick: () => void };
 } | null;
@@ -34,12 +35,17 @@ export default function Carrito() {
     }
     setNotice({
       message: `El total de tu compra es ${formatCurrency(cartTotal)}. ¿Deseas continuar con el pago?`,
-      onConfirm: () => {
+      onConfirm: async () => {
+        setNotice({ message: "Procesando tu compra..." });
         try {
-          checkout(cart);
-          setNotice({ message: "Compra confirmada. Stock actualizado. ¡Gracias por tu compra!" });
+          const boleta = await checkout(cart);
+          setNotice({
+            message: `¡Compra confirmada! Boleta ${boleta.number}: ${formatCurrency(boleta.total)} ` +
+              `(neto ${formatCurrency(boleta.netAmount)} + IVA ${formatCurrency(boleta.taxAmount)}). Gracias por tu compra.`,
+          });
         } catch (error) {
-          setNotice({ message: (error as Error).message });
+          // Ej. 409 "Stock insuficiente..." o "El precio cambió...": el carrito ya se ajustó al catálogo actual
+          setNotice({ message: mensajeDeError(error, (error as Error).message) });
         }
       },
     });

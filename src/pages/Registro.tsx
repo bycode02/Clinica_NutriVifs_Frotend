@@ -92,10 +92,13 @@ export function UserForm({ managed = false, editProfile = false, initial, onDone
     }
   };
 
-  const handleSubmit = (event: FormEvent) => {
+  const handleSubmit = async (event: FormEvent) => {
     event.preventDefault();
 
-    const nuevosErrores = validarRegistro(datos, editProfile, initial?.apellido === "");
+    // Al editar un usuario desde el panel, la clave vacía significa "no cambiarla"
+    // (la API nunca devuelve la contraseña)
+    const sinCambioDeClave = managed && !!initial && !datos.password;
+    const nuevosErrores = validarRegistro(datos, editProfile || sinCambioDeClave, initial?.apellido === "");
     setErrores(nuevosErrores);
     if (Object.values(nuevosErrores).some(Boolean)) {
       setMessage("Revisa los campos marcados en rojo.");
@@ -127,9 +130,13 @@ export function UserForm({ managed = false, editProfile = false, initial, onDone
     };
 
     try {
-      if (editProfile) { updateProfile(profile); onSaved?.(); }
-      else { manageUser(profile, initial?.email); onDone?.(); }
-    } catch (error) { setMessage((error as Error).message); }
+      if (editProfile) { await updateProfile(profile); onSaved?.(); }
+      else { await manageUser(profile, initial?.email); onDone?.(); }
+    } catch (error) {
+      const deApi = erroresDeCampos(error, CAMPOS_API) as Errores;
+      setErrores(deApi);
+      setMessage(Object.keys(deApi).length ? "Revisa los campos marcados en rojo." : mensajeDeError(error, (error as Error).message));
+    }
   };
 
   return (

@@ -2,6 +2,7 @@ import { createContext, useContext } from "react";
 import type { MiembroEquipo } from "../data/equipo";
 import type { Producto } from "../data/productos";
 import type { RegisterRequest } from "../types/auth";
+import type { Boleta } from "../types/boleta";
 
 export type Role = "Administrador" | "Vendedor" | "Cliente";
 
@@ -54,21 +55,26 @@ export type AppState = {
   changeQuantity: (code: string, amount: number) => void;
   removeFromCart: (code: string) => void;
   clearCart: () => void;
-  checkout: (expectedCart: CartItem[]) => void;
+  // Compra en la API (POST /receipts): devuelve la boleta
+  checkout: (expectedCart: CartItem[]) => Promise<Boleta>;
+  // Vuelve a pedir productos y categorías a la API
+  reloadCatalog: () => Promise<void>;
+  catalogLoading: boolean;
+  catalogError: string;
   profiles: Profile[];
   // Registro e inicio de sesión contra la API (/api/v1/auth). Lanzan el error de axios
   // para que el formulario muestre los mensajes del backend (ver api/errores.ts).
   register: (datos: RegisterRequest) => Promise<void>;
   login: (email: string, password: string) => Promise<Role>;
-  updateProfile: (details: ProfileDetails) => void;
-  manageUser: (profile: Profile, originalEmail?: string) => void;
-  deleteUser: (email: string) => void;
+  updateProfile: (details: ProfileDetails) => Promise<void>;
+  manageUser: (profile: Profile, originalEmail?: string) => Promise<void>;
+  deleteUser: (email: string) => Promise<void>;
   categories: string[];
-  saveProduct: (product: ProductoCatalogo) => void;
-  deleteProduct: (id: string) => void;
-  updateStock: (id: string, stock: number) => void;
-  saveCategory: (name: string, previous?: string) => void;
-  deleteCategory: (name: string) => void;
+  saveProduct: (product: ProductoCatalogo) => Promise<void>;
+  deleteProduct: (id: string) => Promise<void>;
+  updateStock: (id: string, stock: number) => Promise<void>;
+  saveCategory: (name: string, previous?: string) => Promise<void>;
+  deleteCategory: (name: string) => Promise<void>;
   session: Session | null;
   logout: () => Promise<void>;
 };

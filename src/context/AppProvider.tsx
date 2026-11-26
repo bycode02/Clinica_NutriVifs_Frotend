@@ -1,39 +1,42 @@
 import { useCallback, useEffect, useState, type ReactNode } from "react";
-import { ADMIN_SEED_KEY, seedAdmin, sessionFromProfile } from "../data/defaultAdmin";
 import { EQUIPO_INICIAL, type MiembroEquipo } from "../data/equipo";
-import { PRODUCTOS, CATEGORIAS, imagenProducto } from "../data/productos";
-import { STORAGE_KEYS, loadList, loadObject, remove, save } from "../utils/storage";
+import { imagenProducto } from "../data/productos";
+import { STORAGE_KEYS, loadObject, remove, save } from "../utils/storage";
 import { validarRegistro, INICIAL } from "../utils/registro";
 import { normalizeEmail } from "../utils/validaciones";
-import { requireRole, validateUser, validateProduct, validateStock, normalizeCategory, ROLES } from "../utils/administracion";
+import { requireRole, validateProduct, validateStock, normalizeCategory } from "../utils/administracion";
 import { AppContext, type AppState, type CartItem, type Profile, type ProfileDetails, type ProductoCatalogo, type Session, type Role } from "./AppContext";
 import { SESION_EXPIRADA } from "../api/axiosConfig";
+import { mensajeDeError } from "../api/errores";
 import { obtenerToken } from "../api/tokenStorage";
 import { cerrarSesion, iniciarSesion, registrarse } from "../services/authService";
+import { actualizarCategoria, crearCategoria, eliminarCategoria, obtenerCategorias } from "../services/categoriaService";
+import { actualizarProducto, actualizarStock, crearProducto, eliminarProducto, obtenerProductos } from "../services/productoService";
+import { comprar } from "../services/boletaService";
+import { actualizarMiPerfil, actualizarUsuario, crearUsuario, eliminarUsuario, obtenerMiPerfil, obtenerUsuarios } from "../services/usuarioService";
 import type { AuthResponse, RegisterRequest } from "../types/auth";
-import { rolDesdeApi, sesionDesdeApi } from "../utils/roles";
+import type { Categoria, Producto } from "../types/producto";
+import { perfilDesdeApi, rolDesdeApi, sesionDesdeApi, usuarioHaciaApi } from "../utils/roles";
 import { loginConRetorno } from "../utils/redireccion";
 
-const CATEGORY_KEY = "clinica-nutridifs-categories";
-function loadProducts(): ProductoCatalogo[] {
-  const stored = loadObject<ProductoCatalogo[]>(STORAGE_KEYS.ADMIN_PRODUCTS);
-  const source: ProductoCatalogo[] = Array.isArray(stored) ? stored : PRODUCTOS;
-  return source.map(item => {
-    const base = PRODUCTOS.find(p => p.id === item.id);
-    return { ...base, ...item, image: item.image || base?.image || "", activeIngredient: item.activeIngredient || base?.activeIngredient || "", species: item.species || base?.species || "",
-      category: item.category.toUpperCase(), distributor: item.distributor || "Distribuidora VetSur" };
-  });
+// Producto de la API -> forma que usan las páginas (categoría como nombre)
+function productoDesdeApi(p: Producto): ProductoCatalogo {
+  return {
+    id: p.id, name: p.name, category: p.category.name, price: p.price, stock: p.stock,
+    image: p.image ?? "", activeIngredient: p.activeIngredient ?? "", species: p.species ?? "",
+    description: p.description ?? undefined, distributor: p.distributor,
+  };
 }
-function loadProfiles() {
-  const profiles = loadList<Profile>(STORAGE_KEYS.PROFILES).map(profile => ({ ...profile, role: ROLES.includes(profile.role as Role) ? profile.role : "Cliente" as Role }));
-  return seedAdmin(profiles, loadObject<boolean>(ADMIN_SEED_KEY) === true);
-}
-function loadCart(): CartItem[] {
-  const saved =
-    loadObject<unknown>(STORAGE_KEYS.CART) ??
-    loadObject<unknown>(STORAGE_KEYS.LEGACY_CART);
-  if (!Array.isArray(saved)) return [];
 
+// Código para un producto nuevo: siguiente ME### libre
+function siguienteCodigo(products: ProductoCatalogo[]): string {
+  const max = products.reduce((n, p) => Math.max(n, Number(/^ME(\d+)$/.exec(p.id)?.[1] ?? 0)), 0);
+  return `ME${String(max + 1).padStart(3, "0")}`;
+}
+
+function loadCart(): CartItem[] {
+  const saved = loadObject<unknown>(STORAGE_KEYS.CART) ?? loadObject<unknown>(STORAGE_KEYS.LEGACY_CART);
+  if (!Array.isArray(saved)) return [];
   return saved
     .filter((item) => item && Number(item.quantity) > 0)
     .map((item) => ({
@@ -47,27 +50,60 @@ function loadCart(): CartItem[] {
 }
 
 export function AppProvider({ children }: { children: ReactNode }) {
-  const [products, setProducts] = useState<ProductoCatalogo[]>(loadProducts);
-  const [categories, setCategories] = useState<string[]>(() => loadObject<string[]>(CATEGORY_KEY) ?? [...new Set([...CATEGORIAS, ...loadProducts().map(p => p.category)].map(c => c.toUpperCase()))]);
-  const [profiles, setProfiles] = useState<Profile[]>(loadProfiles);
-  // La sesión viene del backend. Al recargar la página se restaura solo si
-  // todavía hay token guardado; si el token venció, axiosConfig lo renueva solo.
+  // Catálogo: viene de la API (/products y /categories)
+  const [products, setProducts] = useState<ProductoCatalogo[]>([]);
+  const [categoriasApi, setCategoriasApi] = useState<Categoria[]>([]);
+  const [catalogLoading, setCatalogLoading] = useState(true);
+  const [catalogError, setCatalogError] = useState("");
+  const categories = categoriasApi.map((c) => c.name);
+  // Usuarios: el Admin ve todos; el resto, solo su propio perfil (/users/me)
+  const [profiles, setProfiles] = useState<Profile[]>([]);
+  // La sesión se restaura al recargar solo si todavía hay token
   const [session, setSession] = useState<Session | null>(() => {
     const stored = loadObject<Session>(STORAGE_KEYS.SESSION);
     return stored && obtenerToken() ? stored : null;
   });
+  // El carrito se queda en el navegador; el stock y el precio los valida la API al comprar
   const [cart, setCart] = useState<CartItem[]>(loadCart);
   const [team] = useState(() => (loadObject<MiembroEquipo[]>(STORAGE_KEYS.ADMIN_USERS) ?? EQUIPO_INICIAL).filter(user => user.status !== "Inactivo"));
   useEffect(() => { save(STORAGE_KEYS.CART, cart); }, [cart]);
-  useEffect(() => { save(STORAGE_KEYS.ADMIN_PRODUCTS, products); }, [products]);
-  useEffect(() => { save(CATEGORY_KEY, categories); }, [categories]);
-  useEffect(() => { if (loadObject<boolean>(ADMIN_SEED_KEY) !== true) { save(STORAGE_KEYS.PROFILES, profiles); save(ADMIN_SEED_KEY, true); } }, [profiles]);
-  useEffect(() => { if (session) save(STORAGE_KEYS.SESSION, session); }, [session]);
-  const saveProfiles = (list: Profile[]) => { save(STORAGE_KEYS.PROFILES, list); setProfiles(list); };
-  const startSession = (profile: Profile) => {
-    const next = sessionFromProfile(profile);
-    save(STORAGE_KEYS.SESSION, next); setSession(next);
-  };
+
+  // Ajusta el carrito al catálogo vigente (precio, nombre y stock disponibles)
+  const syncCart = useCallback((next: ProductoCatalogo[]) => {
+    setCart(current => current.flatMap(item => {
+      const product = next.find(p => p.id === item.code);
+      return product && product.stock > 0 ? [{ ...item, name: product.name, price: product.price, quantity: Math.min(item.quantity, product.stock) }] : [];
+    }));
+  }, []);
+
+  const reloadCatalog = useCallback(async () => {
+    try {
+      const [prods, cats] = await Promise.all([obtenerProductos(), obtenerCategorias()]);
+      const next = prods.map(productoDesdeApi);
+      setProducts(next);
+      setCategoriasApi(cats);
+      setCatalogError("");
+      syncCart(next);
+    } catch (error) {
+      setCatalogError(mensajeDeError(error, "No se pudo cargar el catálogo."));
+    } finally {
+      setCatalogLoading(false);
+    }
+  }, [syncCart]);
+  // Carga inicial del catálogo (desde un callback: el estado cambia cuando responde la API)
+  useEffect(() => { void Promise.resolve().then(reloadCatalog); }, [reloadCatalog]);
+
+  const reloadProfiles = useCallback(async (role?: Role) => {
+    if (!role) { setProfiles([]); return; }
+    try {
+      const users = role === "Administrador" ? await obtenerUsuarios() : [await obtenerMiPerfil()];
+      setProfiles(users.map(perfilDesdeApi));
+    } catch {
+      setProfiles([]);
+    }
+  }, []);
+  useEffect(() => { void Promise.resolve().then(() => reloadProfiles(session?.role)); }, [session?.role, session?.email, reloadProfiles]);
+
   // ---- Sesión con la API ----
   const startApiSession = (auth: AuthResponse) => {
     const next = sesionDesdeApi(auth);
@@ -79,19 +115,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
     remove(STORAGE_KEYS.SESSION);
   }, []);
   const logout = async () => {
-    // cerrarSesion invalida el refresh token en el backend y borra los tokens
     await cerrarSesion().catch(() => undefined);
     clearSession();
   };
-  // Si el token venció y no se pudo renovar, axiosConfig avisa con este evento:
-  // se cierra la sesión en pantalla y se manda al login, volviendo después a la misma página.
+  // Si el token venció y no se pudo renovar: cerrar sesión y volver al login
   useEffect(() => {
     const onExpired = () => {
       clearSession();
       const actual = window.location.pathname + window.location.search;
-      if (!actual.startsWith("/login")) {
-        window.location.assign(loginConRetorno(actual));
-      }
+      if (!actual.startsWith("/login")) window.location.assign(loginConRetorno(actual));
     };
     window.addEventListener(SESION_EXPIRADA, onExpired);
     return () => window.removeEventListener(SESION_EXPIRADA, onExpired);
@@ -104,169 +136,142 @@ export function AppProvider({ children }: { children: ReactNode }) {
     startApiSession(auth);
     return rolDesdeApi(auth.role);
   };
-  const manageUser = (profile: Profile, originalEmail?: string) => {
+
+  // ---- Usuarios (Admin) y perfil propio ----
+  const manageUser = async (profile: Profile, originalEmail?: string) => {
     requireRole(session?.role, ["Administrador"]);
-    const next = { ...profile, email: normalizeEmail(profile.email), role: profile.role || "Cliente" as Role };
-    if (originalEmail && !profiles.some(p => p.email === originalEmail)) throw new Error("El usuario ya no existe.");
-    validateUser(next, profiles, originalEmail);
-    saveProfiles(originalEmail ? profiles.map(p => p.email === originalEmail ? next : p) : [...profiles, next]);
-    if (originalEmail === session?.email) startSession(next);
+    const datos = usuarioHaciaApi({ ...profile, email: normalizeEmail(profile.email) });
+    if (originalEmail) await actualizarUsuario(originalEmail, datos);
+    else await crearUsuario(datos);
+    await reloadProfiles(session?.role);
   };
-  const updateProfile = (details: ProfileDetails) => {
+  const deleteUser = async (email: string) => {
+    requireRole(session?.role, ["Administrador"]);
+    await eliminarUsuario(email);
+    if (email === session?.email) await logout();
+    else await reloadProfiles(session?.role);
+  };
+  const updateProfile = async (details: ProfileDetails) => {
     const current = profiles.find(p => p.email === session?.email);
-    if (!session || !current || current.locked) throw new Error("Inicia sesión para editar tu perfil.");
-    // Solo se copian datos personales; la cuenta y sus permisos se conservan.
-    const next: Profile = { ...current,
-      name: details.name.trim(), apellido: details.apellido.trim(),
-      email: normalizeEmail(details.email), birthDate: details.birthDate,
-      direccion: details.direccion.trim(), genero: details.genero,
-      phone: details.phone === "+" ? "" : details.phone,
-      region: details.region, comuna: details.comuna,
-    };
+    if (!session || !current) throw new Error("Inicia sesión para editar tu perfil.");
+    const next: Profile = { ...current, ...details, phone: details.phone === "+" ? "" : details.phone };
     const errors = validarRegistro({ ...INICIAL, ...next }, true, current.apellido === "");
     const error = Object.values(errors).find(Boolean);
     if (error) throw new Error(error);
-    if (profiles.some(p => p !== current && normalizeEmail(p.email) === next.email)) throw new Error("Ese correo ya está registrado.");
-    saveProfiles(profiles.map(p => p === current ? next : p));
-    startSession(next);
+    // El correo no se cambia desde el perfil (identifica la sesión)
+    const updated = perfilDesdeApi(await actualizarMiPerfil(usuarioHaciaApi({ ...next, email: session.email, password: "" })));
+    const nextSession = { ...session, name: updated.name, apellido: updated.apellido, birthDate: updated.birthDate, phone: updated.phone };
+    save(STORAGE_KEYS.SESSION, nextSession);
+    setSession(nextSession);
+    await reloadProfiles(session.role);
   };
-  const deleteUser = (email: string) => {
-    requireRole(session?.role, ["Administrador"]);
-    saveProfiles(profiles.filter(p => p.email !== email));
-    if (email === session?.email) logout();
+
+  // ---- Productos y categorías (API) ----
+  const categoryId = (name: string) => {
+    const found = categoriasApi.find(c => c.name === name);
+    if (!found) throw new Error("Selecciona una categoría válida.");
+    return found.id;
   };
-  const commitProducts = (next: ProductoCatalogo[]) => {
-    setProducts(next);
-    save(STORAGE_KEYS.ADMIN_PRODUCTS, next);
-    setCart(current => current.flatMap(item => {
-      const product = next.find(p => p.id === item.code);
-      return product && product.stock > 0 ? [{ ...item, name: product.name, price: product.price, quantity: Math.min(item.quantity, product.stock) }] : [];
-    }));
-  };
-  const saveProduct = (product: ProductoCatalogo) => {
+  const saveProduct = async (product: ProductoCatalogo) => {
     requireRole(session?.role, ["Administrador", "Vendedor"]);
     const exists = products.some(p => p.id === product.id);
     validateProduct(product, categories, !exists);
-    const next = { ...product, name: product.name.trim(), distributor: product.distributor?.trim() };
-    commitProducts(products.some(p => p.id === product.id) ? products.map(p => p.id === product.id ? next : p) : [...products, next]);
+    const datos = {
+      id: exists ? product.id : siguienteCodigo(products),
+      name: product.name.trim(), distributor: (product.distributor ?? "").trim(),
+      description: product.description || undefined, price: product.price, stock: product.stock,
+      image: product.image || undefined, activeIngredient: product.activeIngredient || undefined,
+      species: product.species || undefined, categoryId: categoryId(product.category),
+    };
+    if (exists) await actualizarProducto(product.id, datos);
+    else await crearProducto(datos);
+    await reloadCatalog();
   };
-  const deleteProduct = (id: string) => {
+  const deleteProduct = async (id: string) => {
     requireRole(session?.role, ["Administrador"]);
-    commitProducts(products.filter(p => p.id !== id));
+    await eliminarProducto(id);
+    await reloadCatalog();
   };
-  const updateStock = (id: string, stock: number) => {
+  const updateStock = async (id: string, stock: number) => {
     requireRole(session?.role, ["Administrador", "Vendedor"]);
     validateStock(stock);
-    if (!products.some(p => p.id === id)) throw new Error("El producto ya no existe.");
-    commitProducts(products.map(p => p.id === id ? { ...p, stock } : p));
+    await actualizarStock(id, stock);
+    await reloadCatalog();
   };
-  const saveCategory = (name: string, previous?: string) => {
+  const saveCategory = async (name: string, previous?: string) => {
     requireRole(session?.role, ["Administrador"]);
     const next = normalizeCategory(name);
-    if (categories.some(c => c === next && c !== previous)) throw new Error("La categoría ya existe.");
-    if (previous && !categories.includes(previous)) throw new Error("La categoría ya no existe.");
-    setCategories(previous ? categories.map(c => c === previous ? next : c) : [...categories, next]);
-    if (previous) commitProducts(products.map(p => p.category === previous ? { ...p, category: next } : p));
+    if (previous) await actualizarCategoria(categoryId(previous), next);
+    else await crearCategoria(next);
+    await reloadCatalog();
   };
-  const deleteCategory = (name: string) => {
+  const deleteCategory = async (name: string) => {
     requireRole(session?.role, ["Administrador"]);
-    setCategories(categories.filter(c => c !== name));
-    commitProducts(products.map(p => p.category === name ? { ...p, category: "" } : p));
+    await eliminarCategoria(categoryId(name));
+    await reloadCatalog();
   };
+
+  // ---- Carrito ----
   const getStock = useCallback(
-    (code: string) =>
-      Number(products.find((product) => product.id === code)?.stock ?? 0),
+    (code: string) => Number(products.find((product) => product.id === code)?.stock ?? 0),
     [products],
   );
-
   const getQuantity = useCallback(
     (code: string) => cart.find((item) => item.code === code)?.quantity ?? 0,
     [cart],
   );
-
   const addToCart = useCallback(
     (code: string) => {
       const product = products.find((item) => item.id === code);
       if (!product || product.stock <= 0) return false;
       if (getQuantity(code) >= product.stock) return false;
-
       setCart((current) => {
         const existing = current.find((item) => item.code === code);
         if ((existing?.quantity || 0) >= product.stock) return current;
         if (existing) {
-          return current.map((item) =>
-            item.code === code ? { ...item, quantity: item.quantity + 1 } : item,
-          );
+          return current.map((item) => item.code === code ? { ...item, quantity: item.quantity + 1 } : item);
         }
-        return [
-          ...current,
-          {
-            code,
-            name: product.name,
-            price: product.price,
-            image: imagenProducto(product.image),
-            quantity: 1,
-          },
-        ];
+        return [...current, { code, name: product.name, price: product.price, image: imagenProducto(product.image), quantity: 1 }];
       });
       return true;
     },
     [products, getQuantity],
   );
-
   const changeQuantity = useCallback(
     (code: string, amount: number) => {
       setCart((current) => {
         const item = current.find((entry) => entry.code === code);
         if (!item) return current;
-
         const stock = getStock(code);
         if (amount > 0 && item.quantity >= stock) return current;
-
         const quantity = Math.min(item.quantity + amount, stock);
         if (quantity <= 0) return current.filter((entry) => entry.code !== code);
-        return current.map((entry) =>
-          entry.code === code ? { ...entry, quantity } : entry,
-        );
+        return current.map((entry) => entry.code === code ? { ...entry, quantity } : entry);
       });
     },
     [getStock],
   );
-
   const removeFromCart = useCallback((code: string) => {
     setCart((current) => current.filter((item) => item.code !== code));
   }, []);
-
   const clearCart = useCallback(() => setCart([]), []);
 
-  const checkout = (expectedCart: CartItem[]) => {
-    // Igual que POST /api/v1/receipts del backend: sin sesión no se puede comprar
+  // Compra en la API: valida stock y precio, descuenta y crea la boleta.
+  // Si falla (ej. 409 sin stock o precio cambiado) se recarga el catálogo para ajustar el carrito.
+  const checkout = async (expectedCart: CartItem[]) => {
     if (!session) throw new Error("Debes iniciar sesión para comprar.");
-    const currentCart = loadObject<CartItem[]>(STORAGE_KEYS.CART) ?? [];
-    if (!currentCart.length) throw new Error("El carrito está vacío o la compra ya fue confirmada.");
-    if (JSON.stringify(currentCart) !== JSON.stringify(expectedCart)) {
-      throw new Error("El carrito cambió. Revisa los productos y vuelve a confirmar.");
+    if (!expectedCart.length) throw new Error("El carrito está vacío o la compra ya fue confirmada.");
+    try {
+      const boleta = await comprar(expectedCart.map(item => ({ productId: item.code, quantity: item.quantity, price: item.price })));
+      setCart([]);
+      await reloadCatalog();
+      return boleta;
+    } catch (error) {
+      await reloadCatalog();
+      throw error;
     }
-    const inventory = loadProducts();
-    // Validar toda la compra antes de descontar cualquier producto.
-    const quantities = new Map<string, number>();
-    for (const item of currentCart) {
-      if (!Number.isSafeInteger(item.quantity) || item.quantity <= 0) throw new Error("Cantidad inválida en el carrito.");
-      const product = inventory.find(p => p.id === item.code);
-      const quantity = (quantities.get(item.code) || 0) + item.quantity;
-      if (!product || !Number.isSafeInteger(product.stock) || product.stock < quantity) {
-        throw new Error("Stock insuficiente para " + item.name + ". Revisa tu carrito.");
-      }
-      if (product.price !== item.price) throw new Error("El precio cambió. Actualiza el carrito antes de confirmar.");
-      quantities.set(item.code, quantity);
-    }
-    const next = inventory.map(product => ({ ...product, stock: product.stock - (quantities.get(product.id) || 0) }));
-    save(STORAGE_KEYS.ADMIN_PRODUCTS, next);
-    save(STORAGE_KEYS.CART, []);
-    setProducts(next);
-    setCart([]);
   };
 
-  const value: AppState = { products, categories, team, cart, cartQuantity: cart.reduce((n, p) => n + p.quantity, 0), cartTotal: cart.reduce((n, p) => n + p.price * p.quantity, 0), getQuantity, getStock, addToCart, changeQuantity, removeFromCart, clearCart, checkout, profiles, session, register, login, updateProfile, manageUser, deleteUser, saveProduct, deleteProduct, updateStock, saveCategory, deleteCategory, logout };
+  const value: AppState = { products, categories, team, cart, cartQuantity: cart.reduce((n, p) => n + p.quantity, 0), cartTotal: cart.reduce((n, p) => n + p.price * p.quantity, 0), getQuantity, getStock, addToCart, changeQuantity, removeFromCart, clearCart, checkout, reloadCatalog, catalogLoading, catalogError, profiles, session, register, login, updateProfile, manageUser, deleteUser, saveProduct, deleteProduct, updateStock, saveCategory, deleteCategory, logout };
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
 }

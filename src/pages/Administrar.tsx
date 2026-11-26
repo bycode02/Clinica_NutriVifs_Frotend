@@ -12,6 +12,7 @@ import { formatCurrency } from "../utils/format";
 import { usePage } from "../hooks/usePage";
 import { UserForm } from "./Registro";
 import "../styles/administrar.css";
+import { mensajeDeError } from "../api/errores";
 
 type Section = "USUARIOS" | "PRODUCTOS" | "CATEGORIAS";
 // La sesión y el rol los revisa <RutaProtegida> en App.tsx
@@ -44,14 +45,15 @@ function Management({ seller }: { seller: boolean }) {
   const [message, setMessage] = useState("");
   const [pendingDelete, setPendingDelete] = useState<{
     label: string;
-    run: () => void;
+    run: () => void | Promise<void>;
   } | null>(null);
-  const perform = (action: () => void, success: string) => {
+  // Las acciones van a la API: se espera la respuesta y se muestra su mensaje si falla
+  const perform = async (action: () => void | Promise<void>, success: string) => {
     try {
-      action();
+      await action();
       setMessage(success);
     } catch (error) {
-      setMessage((error as Error).message);
+      setMessage(mensajeDeError(error, (error as Error).message));
     }
   };
   const changeSection = (next: Section) => {
@@ -141,7 +143,7 @@ function Management({ seller }: { seller: boolean }) {
                 type="button"
                 className="btn management-danger"
                 onClick={() => {
-                  perform(pendingDelete.run, "Eliminado correctamente.");
+                  void perform(pendingDelete.run, "Eliminado correctamente.");
                   setPendingDelete(null);
                 }}
               >
@@ -345,8 +347,8 @@ function Management({ seller }: { seller: boolean }) {
                   className="management-form"
                   onSubmit={(e) => {
                     e.preventDefault();
-                    perform(() => {
-                      app.saveCategory(categoryName, categoryForm || undefined);
+                    void perform(async () => {
+                      await app.saveCategory(categoryName, categoryForm || undefined);
                       setCategoryForm(null);
                     }, "Categoría guardada.");
                   }}
@@ -464,7 +466,8 @@ function ProductForm({
   const { categories, saveProduct } = useApp();
   const [product, setProduct] = useState<ProductoCatalogo>(
     initial || {
-      id: crypto.randomUUID(),
+      // El código (ME0xx) lo asigna AppProvider al guardar
+      id: "",
       name: "",
       price: 0,
       distributor: "",
@@ -481,17 +484,17 @@ function ProductForm({
   const [error, setError] = useState("");
   const update = (key: keyof ProductoCatalogo, value: string) =>
     setProduct((p) => ({ ...p, [key]: value }));
-  const submit = (e: FormEvent) => {
+  const submit = async (e: FormEvent) => {
     e.preventDefault();
     try {
       if (!/^\d{3,}$/.test(price) || !/^\d+$/.test(stock))
         throw new Error(
           "Precio: mínimo 3 dígitos; stock: entero no negativo. Sin símbolos.",
         );
-      saveProduct({ ...product, price: Number(price), stock: Number(stock) });
+      await saveProduct({ ...product, price: Number(price), stock: Number(stock) });
       onClose();
     } catch (err) {
-      setError((err as Error).message);
+      setError(mensajeDeError(err, (err as Error).message));
     }
   };
   return (

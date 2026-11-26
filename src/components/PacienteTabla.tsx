@@ -2,9 +2,14 @@ import type { Paciente } from "../types/paciente";
 
 interface PacienteTablaProps {
   pacientes: Paciente[];
+  // Opcionales: si vienen, se muestran los botones de cada fila
+  onEditar?: (paciente: Paciente) => void;
+  onEliminar?: (paciente: Paciente) => void;
 }
 
-export default function PacienteTabla({ pacientes }: PacienteTablaProps) {
+export default function PacienteTabla({ pacientes, onEditar, onEliminar }: PacienteTablaProps) {
+  const conAcciones = !!(onEditar || onEliminar);
+  const columnas = conAcciones ? 6 : 5;
   return (
     <table className="table table-striped table-hover">
       <thead>
@@ -14,12 +19,13 @@ export default function PacienteTabla({ pacientes }: PacienteTablaProps) {
           <th>Raza</th>
           <th>Edad</th>
           <th>Propietario</th>
+          {conAcciones && <th>Acciones</th>}
         </tr>
       </thead>
       <tbody>
         {pacientes.length === 0 ? (
           <tr>
-            <td colSpan={5} className="text-center text-muted">
+            <td colSpan={columnas} className="text-center text-muted">
               No hay pacientes registrados.
             </td>
           </tr>
@@ -31,6 +37,20 @@ export default function PacienteTabla({ pacientes }: PacienteTablaProps) {
               <td>{p.breed}</td>
               <td>{p.age}</td>
               <td>{p.owner}</td>
+              {conAcciones && (
+                <td className="text-nowrap">
+                  {onEditar && (
+                    <button type="button" className="btn btn-sm btn-outline-primary me-2" onClick={() => onEditar(p)}>
+                      Editar
+                    </button>
+                  )}
+                  {onEliminar && (
+                    <button type="button" className="btn btn-sm btn-outline-danger" onClick={() => onEliminar(p)}>
+                      Eliminar
+                    </button>
+                  )}
+                </td>
+              )}
             </tr>
           ))
         )}
