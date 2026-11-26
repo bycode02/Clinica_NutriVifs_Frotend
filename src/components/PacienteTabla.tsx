@@ -13,22 +13,24 @@ export default function PacienteTabla({ pacientes }: PacienteTablaProps) {
           <th>Especie</th>
           <th>Raza</th>
           <th>Edad</th>
+          <th>Propietario</th>
         </tr>
       </thead>
       <tbody>
         {pacientes.length === 0 ? (
           <tr>
-            <td colSpan={4} className="text-center text-muted">
+            <td colSpan={5} className="text-center text-muted">
               No hay pacientes registrados.
             </td>
           </tr>
         ) : (
           pacientes.map((p) => (
             <tr key={p.id}>
-              <td>{p.nombre}</td>
-              <td>{p.especie}</td>
-              <td>{p.raza}</td>
-              <td>{p.edad}</td>
+              <td>{p.name}</td>
+              <td>{p.species}</td>
+              <td>{p.breed}</td>
+              <td>{p.age}</td>
+              <td>{p.owner}</td>
             </tr>
           ))
         )}

@@ -44,10 +44,12 @@ export function validateProduct(
   categories: string[],
   creating = false,
 ) {
+  // Igual que Product.NAME_REGEX del backend: acepta símbolos comunes en
+  // medicamentos, ej. "Vetmedin 2.5mg" u "Omega vet 3-6-9".
   for (const value of [product.name, product.distributor || ""]) {
-    if (value.trim().length < 3 || !/^[\p{L}\p{N} ]+$/u.test(value.trim()))
+    if (value.trim().length < 3 || !/^[\p{L}\p{N} .,\-/+%()&']+$/u.test(value.trim()))
       throw new Error(
-        "Nombre y distribuidora: mínimo 3 caracteres, sin símbolos.",
+        "Nombre y distribuidora: mínimo 3 caracteres. Solo letras, números, espacios y . , - / + % ( ) & '",
       );
   }
   if (!Number.isSafeInteger(product.price) || product.price < 100)

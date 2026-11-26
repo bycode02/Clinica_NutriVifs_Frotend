@@ -10,6 +10,7 @@ import Consultas from './pages/Consultas'
 import Contactanos from './pages/Contactanos'
 import { Inicio } from './pages/Inicio'
 import { Login } from './pages/Login'
+import Pacientes from './pages/Pacientes'
 import Perfil from './pages/Perfil'
 import Productos from './pages/Productos'
 import { Registro } from './pages/Registro'
@@ -38,6 +39,7 @@ function App() {
         <Route path="/login" element={<Login />} />
         <Route path="/administrar" element={<Administrar />} />
         <Route path="/vendedor" element={<Vendedor />} />
+        <Route path="/pacientes" element={<Pacientes />} />
         <Route path="/perfil" element={<Perfil />} />
         <Route path="/productos" element={<Productos />} />
         <Route path="/registro" element={<Registro />} />

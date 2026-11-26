@@ -3599,6 +3599,16 @@ body.detail-is-open {
   display: grid;
   gap: 0.5rem;
 }
+.cart-page-login-hint {
+  margin: 0;
+  font-size: 0.9rem;
+  color: #4a6461;
+  text-align: center;
+}
+.cart-page-login-hint a {
+  color: #183b39;
+  font-weight: 600;
+}
 
 .profile-sidebar {
   display: flex;

@@ -28,8 +28,8 @@ export default function Pacientes() {
   const texto = busqueda.toLowerCase();
   const filtrados = pacientes.filter(
     (p) =>
-      p.nombre.toLowerCase().includes(texto) ||
-      p.especie.toLowerCase().includes(texto),
+      p.name.toLowerCase().includes(texto) ||
+      p.species.toLowerCase().includes(texto),
   );
 
   return (

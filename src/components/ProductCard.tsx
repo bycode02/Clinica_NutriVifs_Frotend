@@ -12,9 +12,9 @@ export const ProductDescription = ({
     <>{product.description}</>
   ) : (
     <>
-      {product.principio || "Producto veterinario"}
+      {product.activeIngredient || "Producto veterinario"}
       <br />
-      {product.especie && <small>Especie: {product.especie}</small>}
+      {product.species && <small>Especie: {product.species}</small>}
     </>
   );
 

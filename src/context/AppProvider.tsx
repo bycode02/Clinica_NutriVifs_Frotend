@@ -14,7 +14,7 @@ function loadProducts(): ProductoCatalogo[] {
   const source: ProductoCatalogo[] = Array.isArray(stored) ? stored : PRODUCTOS;
   return source.map(item => {
     const base = PRODUCTOS.find(p => p.id === item.id);
-    return { ...base, ...item, image: item.image || base?.image || "", principio: item.principio || base?.principio || "", especie: item.especie || base?.especie || "",
+    return { ...base, ...item, image: item.image || base?.image || "", activeIngredient: item.activeIngredient || base?.activeIngredient || "", species: item.species || base?.species || "",
       category: item.category.toUpperCase(), distributor: item.distributor || "Distribuidora VetSur" };
   });
 }
@@ -216,6 +216,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const clearCart = useCallback(() => setCart([]), []);
 
   const checkout = (expectedCart: CartItem[]) => {
+    // Igual que POST /api/v1/receipts del backend: sin sesión no se puede comprar
+    if (!session) throw new Error("Debes iniciar sesión para comprar.");
     const currentCart = loadObject<CartItem[]>(STORAGE_KEYS.CART) ?? [];
     if (!currentCart.length) throw new Error("El carrito está vacío o la compra ya fue confirmada.");
     if (JSON.stringify(currentCart) !== JSON.stringify(expectedCart)) {

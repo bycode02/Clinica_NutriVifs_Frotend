@@ -30,7 +30,9 @@ test("stock admite cero, rechaza negativos, fracciones y valores no finitos", ()
 test("productos validan distribuidora, precio y pertenencia a categoría", () => {
   const product = { name: "VET 123", distributor: "DISTRIBUIDORA SUR", price: 100, stock: 0, category: "VACUNAS" };
   assert.doesNotThrow(() => validateProduct(product, ["VACUNAS"]));
-  for (const patch of [{ name: "A!B" }, { distributor: "ab" }, { price: 99 }, { price: 100.5 }, { category: "OTRA" }]) assert.throws(() => validateProduct({ ...product, ...patch }, ["VACUNAS"]));
+  for (const patch of [{ name: "A!B" }, { name: "Vet<script>" }, { distributor: "ab" }, { price: 99 }, { price: 100.5 }, { category: "OTRA" }]) assert.throws(() => validateProduct({ ...product, ...patch }, ["VACUNAS"]));
+  // Símbolos comunes en nombres de medicamentos
+  for (const name of ["Vetmedin 2.5mg", "Omega vet 3-6-9", "Amoxicilina + Ác. clavulánico (500mg)", "Lab. O'Brien & Cía"]) assert.doesNotThrow(() => validateProduct({ ...product, name }, ["VACUNAS"]));
 });
 test("usuarios reutilizan restricciones existentes", () => {
   assert.doesNotThrow(() => validateUser(user, []));

@@ -478,8 +478,8 @@ function ProductForm({
       stock: 1,
       category: categories[0] || "",
       image: "",
-      principio: "",
-      especie: "",
+      activeIngredient: "",
+      species: "",
       description: "",
     },
   );

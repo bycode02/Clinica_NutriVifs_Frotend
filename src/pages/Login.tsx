@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from "react";
-import { Link, useNavigate } from "react-router";
+import { Link, useNavigate, useSearchParams } from "react-router";
+import { rutaDeRetorno } from "../utils/redireccion";
 import { useApp } from "../context/AppContext";
 import { routeForRole } from "../data/defaultAdmin";
 import { usePage } from "../hooks/usePage";
@@ -16,6 +17,9 @@ export const Login = () => {
   usePage("Iniciar sesión | Clínica NutriDifs", "auth-page");
   const { authenticate } = useApp();
   const navigate = useNavigate();
+  // Ej. /login?redirect=/carrito: después de ingresar se vuelve al carrito
+  const [searchParams] = useSearchParams();
+  const retorno = rutaDeRetorno(searchParams.get("redirect"));
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [emailError, setEmailError] = useState("");
@@ -44,7 +48,7 @@ export const Login = () => {
 
     try {
       const role = authenticate(correo, password);
-      navigate(routeForRole(role), { replace: true });
+      navigate(retorno ?? routeForRole(role), { replace: true });
     }
     catch (error) { setMessage((error as Error).message); }
   };
@@ -57,7 +61,9 @@ export const Login = () => {
       <p className="auth-kicker">Acceso de usuarios</p>
       <h1 className="auth-title">Iniciar sesión</h1>
       <p className="auth-subtitle">
-        Ingresa para continuar con tus solicitudes y reservas.
+        {retorno === "/carrito"
+          ? "Ingresa para terminar tu compra. Tu carrito sigue guardado."
+          : "Ingresa para continuar con tus solicitudes y reservas."}
       </p>
       <form className="auth-form" onSubmit={handleSubmit}>
         <div className="auth-field">
@@ -98,7 +104,9 @@ export const Login = () => {
         </button>
       </form>
       <nav className="auth-links" aria-label="Opciones de acceso">
-        <Link to="/registro">Crear una cuenta</Link>
+        <Link to={retorno ? `/registro?redirect=${encodeURIComponent(retorno)}` : "/registro"}>
+          Crear una cuenta
+        </Link>
         <Link to="/">Volver al inicio</Link>
       </nav>
     </main>

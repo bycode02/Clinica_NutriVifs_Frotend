@@ -1,8 +1,9 @@
+// Mismos campos que la entidad Patient del backend (/api/v1/patients)
 export interface Paciente {
   id: number;
-  nombre: string;
-  especie: string;
-  raza: string;
-  edad: number;
-  propietario: string;
+  name: string;
+  species: string;
+  breed: string | null;
+  age: number;
+  owner: string | null;
 }

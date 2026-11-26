@@ -1,5 +1,6 @@
 import { useState, type ChangeEvent, type FormEvent } from "react";
-import { Link, useNavigate } from "react-router";
+import { Link, useNavigate, useSearchParams } from "react-router";
+import { loginConRetorno, rutaDeRetorno } from "../utils/redireccion";
 import { CampoError } from "../components/CampoError";
 import { useApp, type Role, type Profile } from "../context/AppContext";
 import { REGIONES_COMUNAS } from "../data/regiones";
@@ -24,6 +25,9 @@ export function UserForm({ managed = false, editProfile = false, initial, onDone
   const { register, manageUser, updateProfile, session } = useApp();
   const [role, setRole] = useState<Role>(initial?.role || "Cliente");
   const navigate = useNavigate();
+  // Ej. /registro?redirect=/carrito: al crear la cuenta se vuelve al carrito
+  const [searchParams] = useSearchParams();
+  const retorno = rutaDeRetorno(searchParams.get("redirect"));
   const [datos, setDatos] = useState<Campos>(initial ? { ...INICIAL, ...initial, confirmPassword: initial.password, aceptaTerminos: true } : INICIAL);
   const [errores, setErrores] = useState<Errores>({});
   const [message, setMessage] = useState("");
@@ -76,7 +80,7 @@ export function UserForm({ managed = false, editProfile = false, initial, onDone
     try {
       if (editProfile) { updateProfile(profile); onSaved?.(); }
       else if (managed) { manageUser(profile, initial?.email); onDone?.(); }
-      else { register(profile); navigate("/"); }
+      else { register(profile); navigate(retorno ?? "/"); }
     } catch (error) { setMessage((error as Error).message); }
   };
 
@@ -289,7 +293,7 @@ export function UserForm({ managed = false, editProfile = false, initial, onDone
         </p>
       </form>
       {managed || editProfile ? <button className="btn" type="button" onClick={onDone}>Cancelar</button> : <nav className="auth-links" aria-label="Opciones de cuenta">
-        <Link to="/login">Ya tengo una cuenta</Link>
+        <Link to={retorno ? loginConRetorno(retorno) : "/login"}>Ya tengo una cuenta</Link>
         <Link to="/">Volver al inicio</Link>
       </nav>}
     </section>

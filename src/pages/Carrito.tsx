@@ -1,19 +1,35 @@
 import { useState } from "react";
-import { Link } from "react-router";
+import { Link, useNavigate } from "react-router";
 import { useApp } from "../context/AppContext";
 import { usePage } from "../hooks/usePage";
 import { formatCurrency } from "../utils/format";
+import { loginConRetorno } from "../utils/redireccion";
 
-type Notice = { message: string; onConfirm?: () => void } | null;
+type Notice = {
+  message: string;
+  onConfirm?: () => void;
+  // Botón principal distinto de "Confirmar" (ej. "Iniciar sesión")
+  action?: { label: string; onClick: () => void };
+} | null;
 
 export default function Carrito() {
   usePage("Carrito | Clínica NutriDifs", "cart-page-body");
-  const { cart, cartTotal, changeQuantity, removeFromCart, clearCart, checkout, getStock } = useApp();
+  const { cart, cartTotal, changeQuantity, removeFromCart, clearCart, checkout, getStock, session } = useApp();
+  const navigate = useNavigate();
   const [notice, setNotice] = useState<Notice>(null);
 
   const pay = () => {
     if (cart.length === 0) {
       setNotice({ message: "Agrega al menos un producto antes de pagar." });
+      return;
+    }
+    // Para comprar hay que iniciar sesión (la boleta queda en el historial del usuario).
+    // El carrito se conserva: después del login se vuelve aquí.
+    if (!session) {
+      setNotice({
+        message: "Debes iniciar sesión para comprar. Tu carrito se mantendrá guardado.",
+        action: { label: "Iniciar sesión", onClick: () => navigate(loginConRetorno("/carrito")) },
+      });
       return;
     }
     setNotice({
@@ -99,12 +115,34 @@ export default function Carrito() {
             <button type="button" className="btn cart-page-button primary" onClick={pay}>
               Pagar
             </button>
+            {!session && cart.length > 0 && !notice ? (
+              <p className="cart-page-login-hint">
+                Para pagar debes <Link to={loginConRetorno("/carrito")}>iniciar sesión</Link>.
+              </p>
+            ) : null}
 
             {notice ? (
               <div className="cart-notice" role="status">
                 <p>{notice.message}</p>
                 <div className="cart-notice-actions">
-                  {notice.onConfirm ? (
+                  {notice.action ? (
+                    <>
+                      <button
+                        type="button"
+                        className="btn cart-page-button primary"
+                        onClick={notice.action.onClick}
+                      >
+                        {notice.action.label}
+                      </button>
+                      <button
+                        type="button"
+                        className="btn cart-page-button"
+                        onClick={() => setNotice(null)}
+                      >
+                        Cancelar
+                      </button>
+                    </>
+                  ) : notice.onConfirm ? (
                     <>
                       <button
                         type="button"
