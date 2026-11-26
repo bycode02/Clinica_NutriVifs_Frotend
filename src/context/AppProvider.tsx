@@ -7,6 +7,12 @@ import { validarRegistro, INICIAL } from "../utils/registro";
 import { normalizeEmail } from "../utils/validaciones";
 import { requireRole, validateUser, validateProduct, validateStock, normalizeCategory, ROLES } from "../utils/administracion";
 import { AppContext, type AppState, type CartItem, type Profile, type ProfileDetails, type ProductoCatalogo, type Session, type Role } from "./AppContext";
+import { SESION_EXPIRADA } from "../api/axiosConfig";
+import { obtenerToken } from "../api/tokenStorage";
+import { cerrarSesion, iniciarSesion, registrarse } from "../services/authService";
+import type { AuthResponse, RegisterRequest } from "../types/auth";
+import { rolDesdeApi, sesionDesdeApi } from "../utils/roles";
+import { loginConRetorno } from "../utils/redireccion";
 
 const CATEGORY_KEY = "clinica-nutridifs-categories";
 function loadProducts(): ProductoCatalogo[] {
@@ -44,10 +50,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [products, setProducts] = useState<ProductoCatalogo[]>(loadProducts);
   const [categories, setCategories] = useState<string[]>(() => loadObject<string[]>(CATEGORY_KEY) ?? [...new Set([...CATEGORIAS, ...loadProducts().map(p => p.category)].map(c => c.toUpperCase()))]);
   const [profiles, setProfiles] = useState<Profile[]>(loadProfiles);
+  // La sesión viene del backend. Al recargar la página se restaura solo si
+  // todavía hay token guardado; si el token venció, axiosConfig lo renueva solo.
   const [session, setSession] = useState<Session | null>(() => {
     const stored = loadObject<Session>(STORAGE_KEYS.SESSION);
-    const account = loadProfiles().find(p => p.email === stored?.email && !p.locked);
-    return account ? sessionFromProfile(account) : null;
+    return stored && obtenerToken() ? stored : null;
   });
   const [cart, setCart] = useState<CartItem[]>(loadCart);
   const [team] = useState(() => (loadObject<MiembroEquipo[]>(STORAGE_KEYS.ADMIN_USERS) ?? EQUIPO_INICIAL).filter(user => user.status !== "Inactivo"));
@@ -61,24 +68,41 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const next = sessionFromProfile(profile);
     save(STORAGE_KEYS.SESSION, next); setSession(next);
   };
-  const logout = () => { setSession(null); remove(STORAGE_KEYS.SESSION); };
-  const register = (profile: Profile) => {
-    const next = { ...profile, email: normalizeEmail(profile.email), role: "Cliente" as Role, failedAttempts: 0, locked: false };
-    validateUser(next, profiles);
-    saveProfiles([...profiles, next]); startSession(next);
+  // ---- Sesión con la API ----
+  const startApiSession = (auth: AuthResponse) => {
+    const next = sesionDesdeApi(auth);
+    save(STORAGE_KEYS.SESSION, next);
+    setSession(next);
   };
-  const authenticate = (email: string, password: string): Role => {
-    const profile = profiles.find(p => p.email === normalizeEmail(email));
-    if (!profile) throw new Error("No existe una cuenta registrada con este correo.");
-    if (profile.locked) throw new Error("Cuenta bloqueada por 3 intentos fallidos. Contacta a soporte.");
-    if (profile.password !== password) {
-      const failedAttempts = (profile.failedAttempts || 0) + 1;
-      saveProfiles(profiles.map(p => p === profile ? { ...p, failedAttempts, locked: failedAttempts >= 3 } : p));
-      throw new Error(failedAttempts >= 3 ? "Cuenta bloqueada por 3 intentos fallidos." : "La contraseña no coincide con esta cuenta.");
-    }
-    saveProfiles(profiles.map(p => p === profile ? { ...p, failedAttempts: 0 } : p));
-    startSession(profile);
-    return profile.role || "Cliente";
+  const clearSession = useCallback(() => {
+    setSession(null);
+    remove(STORAGE_KEYS.SESSION);
+  }, []);
+  const logout = async () => {
+    // cerrarSesion invalida el refresh token en el backend y borra los tokens
+    await cerrarSesion().catch(() => undefined);
+    clearSession();
+  };
+  // Si el token venció y no se pudo renovar, axiosConfig avisa con este evento:
+  // se cierra la sesión en pantalla y se manda al login, volviendo después a la misma página.
+  useEffect(() => {
+    const onExpired = () => {
+      clearSession();
+      const actual = window.location.pathname + window.location.search;
+      if (!actual.startsWith("/login")) {
+        window.location.assign(loginConRetorno(actual));
+      }
+    };
+    window.addEventListener(SESION_EXPIRADA, onExpired);
+    return () => window.removeEventListener(SESION_EXPIRADA, onExpired);
+  }, [clearSession]);
+  const register = async (datos: RegisterRequest) => {
+    startApiSession(await registrarse(datos));
+  };
+  const login = async (email: string, password: string): Promise<Role> => {
+    const auth = await iniciarSesion({ email: normalizeEmail(email), password });
+    startApiSession(auth);
+    return rolDesdeApi(auth.role);
   };
   const manageUser = (profile: Profile, originalEmail?: string) => {
     requireRole(session?.role, ["Administrador"]);
@@ -243,6 +267,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setCart([]);
   };
 
-  const value: AppState = { products, categories, team, cart, cartQuantity: cart.reduce((n, p) => n + p.quantity, 0), cartTotal: cart.reduce((n, p) => n + p.price * p.quantity, 0), getQuantity, getStock, addToCart, changeQuantity, removeFromCart, clearCart, checkout, profiles, session, register, authenticate, updateProfile, manageUser, deleteUser, saveProduct, deleteProduct, updateStock, saveCategory, deleteCategory, logout };
+  const value: AppState = { products, categories, team, cart, cartQuantity: cart.reduce((n, p) => n + p.quantity, 0), cartTotal: cart.reduce((n, p) => n + p.price * p.quantity, 0), getQuantity, getStock, addToCart, changeQuantity, removeFromCart, clearCart, checkout, profiles, session, register, login, updateProfile, manageUser, deleteUser, saveProduct, deleteProduct, updateStock, saveCategory, deleteCategory, logout };
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
 }

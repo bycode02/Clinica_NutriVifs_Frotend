@@ -7,3 +7,6 @@ export interface Paciente {
   age: number;
   owner: string | null;
 }
+
+// Datos para crear o editar: el id lo genera la base de datos
+export type PacienteForm = Omit<Paciente, "id">;

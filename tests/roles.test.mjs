@@ -6,11 +6,19 @@ import ts from "typescript";
 const require = createRequire(import.meta.url);
 // Compile application TypeScript in memory for Node's test runner.
 Module._extensions[".ts"] = (module, filename) => {
-  const source = fs.readFileSync(filename, "utf8");
+  // import.meta.env es de Vite y no existe en CommonJS: aquí se reemplaza por un objeto vacío
+  // (así axiosConfig usa su URL por defecto y Node no trata el archivo como módulo ES).
+  const source = fs.readFileSync(filename, "utf8").replace(/import\.meta\.env/g, "({})");
   module._compile(ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2023, jsx: ts.JsxEmit.ReactJSX } }).outputText, filename);
 };
 const { requireRole, validateUser, validateStock, validateProduct, normalizeCategory } = require("../src/utils/administracion.ts");
 const user = { name: "Prueba", apellido: "Roles", email: "roles@duoc.cl", birthDate: "2000-01-01", direccion: "Prueba 123", genero: "otro", phone: "", region: "Metropolitana de Santiago", comuna: "Santiago", password: "Prueba123", role: "Cliente", failedAttempts: 0, locked: false };
+// Deja la sesión como queda después de un login en la API: los datos de sesión y el token.
+// Sin token, AppProvider no restaura la sesión.
+function guardarSesion(storage, session) {
+  storage.set("clinica-nutridifs-session", JSON.stringify(session));
+  storage.set("clinica-nutridifs-token", "token-de-prueba");
+}
 test("solo administrador puede usar operaciones administrativas", () => {
   for (const role of [undefined, "Cliente", "Vendedor"]) assert.throws(() => requireRole(role, ["Administrador"]));
   assert.doesNotThrow(() => requireRole("Administrador", ["Administrador"]));
@@ -60,7 +68,7 @@ test("vendedor crea y edita productos y stock, pero no administra usuarios ni el
   } });
   try {
     storage.set("clinica-nutridifs-profiles", JSON.stringify([{ ...user, role: "Vendedor" }]));
-    storage.set("clinica-nutridifs-session", JSON.stringify({ ...user, role: "Vendedor" }));
+    guardarSesion(storage, { ...user, role: "Vendedor" });
     let app;
     function Probe() { app = useApp(); return null; }
     const refresh = () => renderToStaticMarkup(createElement(AppProvider, null, createElement(Probe)));
@@ -92,7 +100,7 @@ test("búsqueda por nombre admite coincidencias parciales, tildes, mayúsculas y
   assert.equal(matchesProductName("Vacuna", "antibiotico"), false);
 });
 
-test("todos los roles editan su perfil, conservan credenciales y persisten el correo nuevo", () => {
+test("todos los roles editan su perfil, conservan credenciales y persisten el correo nuevo", async () => {
   const previous = Object.getOwnPropertyDescriptor(globalThis, "localStorage");
   const storage = new Map();
   Object.defineProperty(globalThis, "localStorage", { configurable: true, value: {
@@ -107,7 +115,7 @@ test("todos los roles editan su perfil, conservan credenciales y persisten el co
     for (const role of ["Cliente", "Vendedor", "Administrador"]) {
       const other = { ...user, email: "otro@duoc.cl", password: "Otra123" };
       storage.set("clinica-nutridifs-profiles", JSON.stringify([{ ...user, role }, other]));
-      storage.set("clinica-nutridifs-session", JSON.stringify({ ...user, role }));
+      guardarSesion(storage, { ...user, role });
       refresh();
       for (const patch of [{ name: "" }, { apellido: "" }, { email: "a@example.com" }, { birthDate: "2020-01-01" }, { phone: "1234" }, { direccion: "" }, { region: "" }, { comuna: "" }, { genero: "" }]) {
         assert.throws(() => app.updateProfile({ ...user, ...patch }));
@@ -124,13 +132,12 @@ test("todos los roles editan su perfil, conservan credenciales y persisten el co
       assert.equal(app.session.role, role);
       assert.equal(app.session.email, "nuevo@duoc.cl");
       assert.deepEqual(app.profiles.find(p => p.email === other.email), other);
-      app.logout();
+      // Cerrar sesión borra la sesión y los tokens (el login ahora es contra la API)
+      await app.logout();
       refresh();
+      assert.equal(app.session, null);
+      assert.equal(storage.has("clinica-nutridifs-token"), false);
       assert.throws(() => app.updateProfile(user), /sesión/);
-      assert.throws(() => app.authenticate(user.email, user.password), /No existe/);
-      app.authenticate("nuevo@duoc.cl", user.password);
-      refresh();
-      assert.equal(app.session.name, "Editado");
     }
   } finally {
     if (previous) Object.defineProperty(globalThis, "localStorage", previous);
@@ -154,7 +161,7 @@ for (const role of [null, "Cliente", "Vendedor", "Administrador"]) {
     } });
     try {
       storage.set("clinica-nutridifs-profiles", JSON.stringify([{ ...user, role: role || "Cliente" }]));
-      if (role) storage.set("clinica-nutridifs-session", JSON.stringify({ ...user, role }));
+      if (role) guardarSesion(storage, { ...user, role });
       for (const route of publicRoutes) {
         const html = renderToStaticMarkup(createElement(MemoryRouter, { initialEntries: [route] }, createElement(AppProvider, null, createElement(App))));
         assert.match(html, /<h[12][ >]/, route);
@@ -193,7 +200,15 @@ function withAppStorage(run) {
 const stockProduct = { id: "stock-test", name: "Producto prueba", price: 1000, stock: 2, category: "VACUNAS", image: "", principio: "", especie: "", distributor: "VetSur" };
 const cartFor = (quantity = 2) => [{ code: stockProduct.id, name: stockProduct.name, price: 1000, image: "", quantity }];
 
+test("sin sesión no se puede comprar", () => withAppStorage((storage, refresh) => {
+  storage.set("admin-products", JSON.stringify([stockProduct]));
+  storage.set("carrito", JSON.stringify(cartFor()));
+  assert.throws(() => refresh().checkout(cartFor()), /iniciar sesión/);
+  assert.equal(JSON.parse(storage.get("admin-products"))[0].stock, 2);
+}));
+
 test("confirmar descuenta stock, persiste el agotamiento y no duplica la compra", () => withAppStorage((storage, refresh) => {
+  guardarSesion(storage, { ...user, role: "Cliente" });
   storage.set("admin-products", JSON.stringify([stockProduct]));
   storage.set("carrito", JSON.stringify(cartFor()));
   const app = refresh();
@@ -208,6 +223,7 @@ test("confirmar descuenta stock, persiste el agotamiento y no duplica la compra"
 test("compra con stock insuficiente no modifica ningún producto ni el carrito", () => withAppStorage((storage, refresh) => {
   const inventory = [stockProduct, { ...stockProduct, id: "other", stock: 0 }];
   const cart = [...cartFor(1), { ...cartFor(1)[0], code: "other" }];
+  guardarSesion(storage, { ...user, role: "Cliente" });
   storage.set("admin-products", JSON.stringify(inventory));
   storage.set("carrito", JSON.stringify(cart));
   assert.throws(() => refresh().checkout(cart), /insuficiente/);
@@ -216,6 +232,7 @@ test("compra con stock insuficiente no modifica ningún producto ni el carrito",
 }));
 
 test("compra rechaza cambios de carrito, precios y cantidades inválidas", () => withAppStorage((storage, refresh) => {
+  guardarSesion(storage, { ...user, role: "Cliente" });
   storage.set("admin-products", JSON.stringify([stockProduct]));
   storage.set("carrito", JSON.stringify(cartFor(1)));
   assert.throws(() => refresh().checkout(cartFor(2)), /cambió/);
@@ -253,41 +270,41 @@ test("administrador inicial se crea una vez sin duplicar ni sobrescribir cambios
   assert.deepEqual(seedAdmin(edited, true), edited);
 });
 
-test("login usa el rol de la cuenta e ignora el antiguo rol elegido", () => withAppStorage((storage, refresh) => {
-  storage.set("clinica-nutridifs-profiles", JSON.stringify([user]));
+// El login, los intentos fallidos y el bloqueo ahora los valida el backend
+// (ver AuthServiceTest en miapi-backend-nutrivfis). Aquí se prueba la sesión del lado del frontend.
+const { rolDesdeApi, sesionDesdeApi } = require("../src/utils/roles.ts");
+
+test("la sesión guardada solo se restaura si hay token", () => withAppStorage((storage, refresh) => {
   storage.set("clinica-nutridifs-session", JSON.stringify({ ...user, role: "Administrador" }));
-  let app = refresh();
-  assert.equal(app.session.role, "Cliente");
-  assert.equal(app.authenticate(user.email, user.password, "Administrador"), "Cliente");
-  assert.equal(routeForRole("Cliente"), "/");
-  assert.equal(routeForRole("Vendedor"), "/vendedor");
-  assert.equal(routeForRole("Administrador"), "/administrar");
+  assert.equal(refresh().session, null);
+  storage.set("clinica-nutridifs-token", "token-de-prueba");
+  assert.equal(refresh().session.role, "Administrador");
+}));
+
+test("los roles de la API se traducen y la sesión no guarda la contraseña", () => {
+  assert.equal(rolDesdeApi("ADMIN"), "Administrador");
+  assert.equal(rolDesdeApi("SELLER"), "Vendedor");
+  assert.equal(rolDesdeApi("CLIENT"), "Cliente");
+  assert.equal(routeForRole(rolDesdeApi("CLIENT")), "/");
+  assert.equal(routeForRole(rolDesdeApi("SELLER")), "/vendedor");
+  assert.equal(routeForRole(rolDesdeApi("ADMIN")), "/administrar");
+  const session = sesionDesdeApi({ token: "t", type: "Bearer", expiresIn: 3600, refreshToken: "r", refreshExpiresIn: 1,
+    name: "Ana", lastName: "Pérez", email: "ana@gmail.com", birthDate: "2000-01-01", phone: null, role: "SELLER" });
+  assert.deepEqual(session, { name: "Ana", apellido: "Pérez", email: "ana@gmail.com", birthDate: "2000-01-01", phone: "", role: "Vendedor" });
+  assert.equal("password" in session || "token" in session, false);
+});
+
+test("un cliente no puede gestionar productos ni stock", () => withAppStorage((storage, refresh) => {
+  guardarSesion(storage, { ...user, role: "Cliente" });
+  const app = refresh();
   assert.throws(() => app.updateStock(stockProduct.id, 4), /permiso/);
   assert.throws(() => app.saveProduct(stockProduct), /permiso/);
-  app = refresh();
-  assert.equal(app.session.role, "Cliente");
-  assert.equal("password" in app.session, false);
-}));
-
-test("credenciales del administrador funcionan y credenciales incorrectas se rechazan", () => withAppStorage((_storage, refresh) => {
-  const app = refresh();
-  assert.equal(app.authenticate(DEFAULT_ADMIN.email.toUpperCase(), DEFAULT_ADMIN.password), "Administrador");
-  assert.throws(() => app.authenticate("inexistente@duoc.cl", "Prueba123"), /No existe/);
-  assert.throws(() => app.authenticate(DEFAULT_ADMIN.email, "Incorrecta1"), /no coincide/);
-}));
-
-test("login bloquea tras tres fallos y no permite entrar a una cuenta bloqueada", () => withAppStorage((storage, refresh) => {
-  storage.set("clinica-nutridifs-profiles", JSON.stringify([user]));
-  storage.set(ADMIN_SEED_KEY, "true");
-  for (let i = 0; i < 3; i++) assert.throws(() => refresh().authenticate(user.email, "Incorrecta1"));
-  assert.equal(refresh().profiles[0].locked, true);
-  assert.throws(() => refresh().authenticate(user.email, user.password), /bloqueada/);
 }));
 
 test("ambos roles gestionan stock y rechazan altas sin existencias", () => withAppStorage((storage, refresh) => {
   for (const role of ["Vendedor", "Administrador"]) {
     storage.set("clinica-nutridifs-profiles", JSON.stringify([{ ...user, role }]));
-    storage.set("clinica-nutridifs-session", JSON.stringify({ email: user.email }));
+    guardarSesion(storage, { ...user, role });
     storage.set("admin-products", JSON.stringify([stockProduct]));
     let app = refresh();
     assert.throws(() => app.saveProduct({ ...stockProduct, id: "new", stock: 0 }), /al menos 1/);
@@ -303,11 +320,10 @@ test("ambos roles gestionan stock y rechazan altas sin existencias", () => withA
 test("el administrador inicial puede editar sus datos sin inventar apellido", () => withAppStorage((storage, refresh) => {
   storage.set("clinica-nutridifs-profiles", JSON.stringify([DEFAULT_ADMIN]));
   storage.set(ADMIN_SEED_KEY, "true");
-  storage.set("clinica-nutridifs-session", JSON.stringify({ email: DEFAULT_ADMIN.email }));
+  guardarSesion(storage, { email: DEFAULT_ADMIN.email, name: DEFAULT_ADMIN.name, apellido: "", role: "Administrador" });
   refresh().updateProfile({ ...DEFAULT_ADMIN, direccion: "Nueva 123" });
   const app = refresh();
   assert.equal(app.profiles[0].direccion, "Nueva 123");
   assert.equal(app.profiles[0].apellido, "");
   assert.equal(app.session.role, "Administrador");
-  assert.throws(() => app.register({ ...user, apellido: "" }), /apellido/);
 }));

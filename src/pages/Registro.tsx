@@ -14,7 +14,17 @@ import {
 } from "../utils/validaciones";
 
 import { INICIAL, validarRegistro, type Campos } from "../utils/registro";
+import { erroresDeCampos, mensajeDeError } from "../api/errores";
+import type { RegisterRequest } from "../types/auth";
 type Errores = Partial<Record<keyof Campos, string>>;
+
+// Nombre del campo en la API -> nombre del campo en este formulario
+const CAMPOS_API: Record<string, keyof Campos> = {
+  lastName: "apellido",
+  address: "direccion",
+  gender: "genero",
+  acceptTerms: "aceptaTerminos",
+};
 
 export const Registro = () => {
   usePage("Registro | Clínica NutriDifs", "auth-page");
@@ -50,6 +60,38 @@ export function UserForm({ managed = false, editProfile = false, initial, onDone
     actualizar(name as keyof Campos, value);
   };
 
+  const [enviando, setEnviando] = useState(false);
+
+  // Registro público: crea la cuenta en la API (/auth/register) y deja la sesión iniciada
+  const registrarEnApi = async () => {
+    setEnviando(true);
+    try {
+      await register({
+        name: datos.name.trim(),
+        lastName: datos.apellido.trim(),
+        email: normalizeEmail(datos.email),
+        password: datos.password,
+        birthDate: datos.birthDate,
+        phone: datos.phone,
+        address: datos.direccion.trim(),
+        region: datos.region,
+        comuna: datos.comuna,
+        gender: datos.genero as RegisterRequest["gender"],
+        acceptTerms: datos.aceptaTerminos,
+      });
+      navigate(retorno ?? "/");
+    } catch (error) {
+      // Errores por campo del backend, con los nombres de este formulario
+      const deApi = erroresDeCampos(error, CAMPOS_API) as Errores;
+      setErrores(deApi);
+      setMessage(Object.keys(deApi).length
+        ? "Revisa los campos marcados en rojo."
+        : mensajeDeError(error, "No se pudo crear la cuenta."));
+    } finally {
+      setEnviando(false);
+    }
+  };
+
   const handleSubmit = (event: FormEvent) => {
     event.preventDefault();
 
@@ -60,6 +102,13 @@ export function UserForm({ managed = false, editProfile = false, initial, onDone
       return;
     }
 
+    if (!editProfile && !managed) {
+      void registrarEnApi();
+      return;
+    }
+
+    // Editar perfil y gestión de usuarios del panel: todavía en el navegador
+    // (en la API faltan los endpoints /users; ver paso 6).
     const email = normalizeEmail(datos.email);
     const profile: Profile = {
       name: datos.name.trim(),
@@ -79,8 +128,7 @@ export function UserForm({ managed = false, editProfile = false, initial, onDone
 
     try {
       if (editProfile) { updateProfile(profile); onSaved?.(); }
-      else if (managed) { manageUser(profile, initial?.email); onDone?.(); }
-      else { register(profile); navigate(retorno ?? "/"); }
+      else { manageUser(profile, initial?.email); onDone?.(); }
     } catch (error) { setMessage((error as Error).message); }
   };
 
@@ -285,8 +333,8 @@ export function UserForm({ managed = false, editProfile = false, initial, onDone
 
         </>}
 
-        <button type="submit" className="btn btn-primary">
-          {editProfile ? "Guardar cambios" : managed ? "Guardar usuario" : "Registrarme"}
+        <button type="submit" className="btn btn-primary" disabled={enviando}>
+          {editProfile ? "Guardar cambios" : managed ? "Guardar usuario" : enviando ? "Creando cuenta..." : "Registrarme"}
         </button>
         <p className="profile-message" role="status">
           {message}

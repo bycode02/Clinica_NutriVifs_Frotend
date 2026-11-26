@@ -1,6 +1,7 @@
 import { createContext, useContext } from "react";
 import type { MiembroEquipo } from "../data/equipo";
 import type { Producto } from "../data/productos";
+import type { RegisterRequest } from "../types/auth";
 
 export type Role = "Administrador" | "Vendedor" | "Cliente";
 
@@ -55,8 +56,10 @@ export type AppState = {
   clearCart: () => void;
   checkout: (expectedCart: CartItem[]) => void;
   profiles: Profile[];
-  register: (profile: Profile) => void;
-  authenticate: (email: string, password: string) => Role;
+  // Registro e inicio de sesión contra la API (/api/v1/auth). Lanzan el error de axios
+  // para que el formulario muestre los mensajes del backend (ver api/errores.ts).
+  register: (datos: RegisterRequest) => Promise<void>;
+  login: (email: string, password: string) => Promise<Role>;
   updateProfile: (details: ProfileDetails) => void;
   manageUser: (profile: Profile, originalEmail?: string) => void;
   deleteUser: (email: string) => void;
@@ -67,7 +70,7 @@ export type AppState = {
   saveCategory: (name: string, previous?: string) => void;
   deleteCategory: (name: string) => void;
   session: Session | null;
-  logout: () => void;
+  logout: () => Promise<void>;
 };
 
 export const AppContext = createContext<AppState | null>(null);

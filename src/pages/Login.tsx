@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router";
 import { rutaDeRetorno } from "../utils/redireccion";
+import { mensajeDeError } from "../api/errores";
 import { useApp } from "../context/AppContext";
 import { routeForRole } from "../data/defaultAdmin";
 import { usePage } from "../hooks/usePage";
@@ -15,7 +16,8 @@ import {
 
 export const Login = () => {
   usePage("Iniciar sesión | Clínica NutriDifs", "auth-page");
-  const { authenticate } = useApp();
+  const { login } = useApp();
+  const [enviando, setEnviando] = useState(false);
   const navigate = useNavigate();
   // Ej. /login?redirect=/carrito: después de ingresar se vuelve al carrito
   const [searchParams] = useSearchParams();
@@ -26,7 +28,7 @@ export const Login = () => {
   const [passwordError, setPasswordError] = useState("");
   const [message, setMessage] = useState("");
 
-  const handleSubmit = (event: FormEvent) => {
+  const handleSubmit = async (event: FormEvent) => {
     event.preventDefault();
     setEmailError("");
     setPasswordError("");
@@ -46,11 +48,16 @@ export const Login = () => {
       return;
     }
 
+    setEnviando(true);
     try {
-      const role = authenticate(correo, password);
+      const role = await login(correo, password);
       navigate(retorno ?? routeForRole(role), { replace: true });
+    } catch (error) {
+      // Mensaje del backend: "Correo o contraseña incorrectos", "Cuenta bloqueada por 3 intentos...", etc.
+      setMessage(mensajeDeError(error, "No se pudo iniciar sesión."));
+    } finally {
+      setEnviando(false);
     }
-    catch (error) { setMessage((error as Error).message); }
   };
 
   return (
@@ -99,8 +106,8 @@ export const Login = () => {
         <p className="auth-message" aria-live="polite">
           {message}
         </p>
-        <button className="btn auth-button" type="submit">
-          Ingresar
+        <button className="btn auth-button" type="submit" disabled={enviando}>
+          {enviando ? "Ingresando..." : "Ingresar"}
         </button>
       </form>
       <nav className="auth-links" aria-label="Opciones de acceso">

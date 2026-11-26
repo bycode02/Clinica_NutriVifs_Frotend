@@ -22,8 +22,9 @@ export default function Perfil() {
       (session.apellido || session.name || "U").charAt(0).toUpperCase()
     : "U";
 
-  const handleLogout = () => {
-    logout();
+  const handleLogout = async () => {
+    // Invalida el refresh token en el backend antes de salir
+    await logout();
     navigate("/login");
   };
 
