@@ -12,6 +12,8 @@ import Contactanos from './pages/Contactanos'
 import { Inicio } from './pages/Inicio'
 import { Login } from './pages/Login'
 import Pacientes from './pages/Pacientes'
+import MisCompras from './pages/MisCompras'
+import Ordenes from './pages/Ordenes'
 import Perfil from './pages/Perfil'
 import Productos from './pages/Productos'
 import { Registro } from './pages/Registro'
@@ -43,6 +45,8 @@ function App() {
         <Route path="/vendedor" element={<RutaProtegida roles={['Vendedor']}><Vendedor /></RutaProtegida>} />
         <Route path="/pacientes" element={<RutaProtegida roles={['Administrador']}><Pacientes /></RutaProtegida>} />
         <Route path="/perfil" element={<RutaProtegida><Perfil /></RutaProtegida>} />
+        <Route path="/mis-compras" element={<RutaProtegida><MisCompras /></RutaProtegida>} />
+        <Route path="/ordenes" element={<RutaProtegida roles={['Vendedor', 'Administrador']}><Ordenes /></RutaProtegida>} />
         <Route path="/productos" element={<Productos />} />
         <Route path="/registro" element={<Registro />} />
         <Route path="/quienes-somos" element={<QuienesSomos />} />

@@ -17,9 +17,15 @@ const LINKS_POR_ROL: Record<Role, Enlace[]> = {
   Administrador: [
     { to: "/administrar", label: "Administrar" },
     { to: "/pacientes", label: "Pacientes" },
+    { to: "/ordenes", label: "Ventas" },
+    { to: "/mis-compras", label: "Mis compras" },
   ],
-  Vendedor: [{ to: "/vendedor", label: "Panel vendedor" }],
-  Cliente: [],
+  Vendedor: [
+    { to: "/vendedor", label: "Panel vendedor" },
+    { to: "/ordenes", label: "Ventas" },
+    { to: "/mis-compras", label: "Mis compras" },
+  ],
+  Cliente: [{ to: "/mis-compras", label: "Mis compras" }],
 };
 
 export const Navbar = () => {

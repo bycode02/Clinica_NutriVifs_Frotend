@@ -115,6 +115,8 @@ test("rutas protegidas por rol", () => {
     "/vendedor": ["Vendedor"],
     "/pacientes": ["Administrador"],
     "/perfil": ["Cliente", "Vendedor", "Administrador"],
+    "/mis-compras": ["Cliente", "Vendedor", "Administrador"],
+    "/ordenes": ["Vendedor", "Administrador"],
   };
   const render = route => renderToStaticMarkup(createElement(MemoryRouter, { initialEntries: [route] }, createElement(AppProvider, null, createElement(App))));
   try {
@@ -138,6 +140,8 @@ test("rutas protegidas por rol", () => {
       assert.equal(menu.includes('href="/administrar"'), role === "Administrador", `${role}: enlace administrar`);
       assert.equal(menu.includes('href="/pacientes"'), role === "Administrador", `${role}: enlace pacientes`);
       assert.equal(menu.includes('href="/vendedor"'), role === "Vendedor", `${role}: enlace vendedor`);
+      assert.equal(menu.includes('href="/ordenes"'), role === "Vendedor" || role === "Administrador", `${role}: enlace ventas`);
+      assert.equal(menu.includes('href="/mis-compras"'), !!role, `${role}: enlace mis compras`);
       assert.equal(menu.includes("Iniciar sesión"), !role, `${role}: enlace login`);
     }
   } finally {

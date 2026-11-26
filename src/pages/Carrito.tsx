@@ -15,7 +15,16 @@ type Notice = {
 
 export default function Carrito() {
   usePage("Carrito | Clínica NutriDifs", "cart-page-body");
-  const { cart, cartTotal, changeQuantity, removeFromCart, clearCart, checkout, getStock, session } = useApp();
+  const {
+    cart,
+    cartTotal,
+    changeQuantity,
+    removeFromCart,
+    clearCart,
+    checkout,
+    getStock,
+    session,
+  } = useApp();
   const navigate = useNavigate();
   const [notice, setNotice] = useState<Notice>(null);
 
@@ -28,8 +37,12 @@ export default function Carrito() {
     // El carrito se conserva: después del login se vuelve aquí.
     if (!session) {
       setNotice({
-        message: "Debes iniciar sesión para comprar. Tu carrito se mantendrá guardado.",
-        action: { label: "Iniciar sesión", onClick: () => navigate(loginConRetorno("/carrito")) },
+        message:
+          "Debes iniciar sesión para comprar. Tu carrito se mantendrá guardado.",
+        action: {
+          label: "Iniciar sesión",
+          onClick: () => navigate(loginConRetorno("/carrito")),
+        },
       });
       return;
     }
@@ -40,12 +53,15 @@ export default function Carrito() {
         try {
           const boleta = await checkout(cart);
           setNotice({
-            message: `¡Compra confirmada! Boleta ${boleta.number}: ${formatCurrency(boleta.total)} ` +
+            message:
+              `¡Compra confirmada! Boleta ${boleta.number}: ${formatCurrency(boleta.total)} ` +
               `(neto ${formatCurrency(boleta.netAmount)} + IVA ${formatCurrency(boleta.taxAmount)}). Gracias por tu compra.`,
           });
         } catch (error) {
           // Ej. 409 "Stock insuficiente..." o "El precio cambió...": el carrito ya se ajustó al catálogo actual
-          setNotice({ message: mensajeDeError(error, (error as Error).message) });
+          setNotice({
+            message: mensajeDeError(error, (error as Error).message),
+          });
         }
       },
     });
@@ -76,7 +92,8 @@ export default function Carrito() {
                     <h2>{product.name}</h2>
                     <strong>{formatCurrency(product.price)}</strong>
                     <div className="cart-item-actions">
-                      <button className="btn"
+                      <button
+                        className="btn"
                         type="button"
                         aria-label="Disminuir cantidad"
                         onClick={() => changeQuantity(product.code, -1)}
@@ -84,7 +101,8 @@ export default function Carrito() {
                         −
                       </button>
                       <span>{product.quantity}</span>
-                      <button className="btn"
+                      <button
+                        className="btn"
                         type="button"
                         aria-label="Aumentar cantidad"
                         disabled={product.quantity >= getStock(product.code)}
@@ -115,15 +133,24 @@ export default function Carrito() {
               <span>Productos</span>
               <strong>{formatCurrency(cartTotal)}</strong>
             </div>
-            <button type="button" className="btn cart-page-button" onClick={clearCart}>
+            <button
+              type="button"
+              className="btn cart-page-button"
+              onClick={clearCart}
+            >
               Vaciar carrito
             </button>
-            <button type="button" className="btn cart-page-button primary" onClick={pay}>
+            <button
+              type="button"
+              className="btn cart-page-button primary"
+              onClick={pay}
+            >
               Pagar
             </button>
             {!session && cart.length > 0 && !notice ? (
               <p className="cart-page-login-hint">
-                Para pagar debes <Link to={loginConRetorno("/carrito")}>iniciar sesión</Link>.
+                Para pagar debes{" "}
+                <Link to={loginConRetorno("/carrito")}>iniciar sesión</Link>.
               </p>
             ) : null}
 
