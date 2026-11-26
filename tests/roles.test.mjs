@@ -162,7 +162,8 @@ for (const role of [null, "Cliente", "Vendedor", "Administrador"]) {
     try {
       storage.set("clinica-nutridifs-profiles", JSON.stringify([{ ...user, role: role || "Cliente" }]));
       if (role) guardarSesion(storage, { ...user, role });
-      for (const route of publicRoutes) {
+      // /perfil pide sesión: sin sesión redirige al login (se prueba abajo)
+      for (const route of publicRoutes.filter(r => role || r !== "/perfil")) {
         const html = renderToStaticMarkup(createElement(MemoryRouter, { initialEntries: [route] }, createElement(AppProvider, null, createElement(App))));
         assert.match(html, /<h[12][ >]/, route);
         assert.doesNotMatch(html, /NaN|\[object Object\]/, route);
@@ -179,6 +180,52 @@ for (const role of [null, "Cliente", "Vendedor", "Administrador"]) {
     }
   });
 }
+
+// Matriz de rutas protegidas: quién entra, a quién se manda al login y a quién se le niega
+test("rutas protegidas por rol", () => {
+  const previous = Object.getOwnPropertyDescriptor(globalThis, "localStorage");
+  const storage = new Map();
+  Object.defineProperty(globalThis, "localStorage", { configurable: true, value: {
+    getItem: key => storage.get(key) ?? null,
+    setItem: (key, value) => storage.set(key, value),
+    removeItem: key => storage.delete(key),
+  } });
+  // ruta -> roles que pueden entrar
+  const protegidas = {
+    "/administrar": ["Administrador"],
+    "/vendedor": ["Vendedor"],
+    "/pacientes": ["Administrador"],
+    "/perfil": ["Cliente", "Vendedor", "Administrador"],
+  };
+  const render = route => renderToStaticMarkup(createElement(MemoryRouter, { initialEntries: [route] }, createElement(AppProvider, null, createElement(App))));
+  try {
+    for (const role of [null, "Cliente", "Vendedor", "Administrador"]) {
+      storage.clear();
+      storage.set("clinica-nutridifs-profiles", JSON.stringify([{ ...user, role: role || "Cliente" }]));
+      if (role) guardarSesion(storage, { ...user, role });
+      for (const [route, permitidos] of Object.entries(protegidas)) {
+        const html = render(route);
+        const denegado = html.includes("No tienes permiso");
+        if (!role) {
+          // Sin sesión <Navigate> manda al login: no se muestra la página ni el aviso
+          assert.equal(denegado, false, `invitado: ${route}`);
+          assert.doesNotMatch(html, /<main/, `invitado: ${route}`);
+        } else {
+          assert.equal(denegado, !permitidos.includes(role), `${role}: ${route}`);
+        }
+      }
+      // El menú solo muestra los enlaces del rol
+      const menu = render("/");
+      assert.equal(menu.includes('href="/administrar"'), role === "Administrador", `${role}: enlace administrar`);
+      assert.equal(menu.includes('href="/pacientes"'), role === "Administrador", `${role}: enlace pacientes`);
+      assert.equal(menu.includes('href="/vendedor"'), role === "Vendedor", `${role}: enlace vendedor`);
+      assert.equal(menu.includes("Iniciar sesión"), !role, `${role}: enlace login`);
+    }
+  } finally {
+    if (previous) Object.defineProperty(globalThis, "localStorage", previous);
+    else delete globalThis.localStorage;
+  }
+});
 
 function withAppStorage(run) {
   const previous = Object.getOwnPropertyDescriptor(globalThis, "localStorage");

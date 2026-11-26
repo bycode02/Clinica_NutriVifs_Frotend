@@ -1,6 +1,6 @@
 import { matchesProductName } from "../utils/productSearch";
 import { useState, type FormEvent } from "react";
-import { Link, Navigate } from "react-router";
+import { Link } from "react-router";
 import {
   useApp,
   type Profile,
@@ -14,16 +14,9 @@ import { UserForm } from "./Registro";
 import "../styles/administrar.css";
 
 type Section = "USUARIOS" | "PRODUCTOS" | "CATEGORIAS";
+// La sesión y el rol los revisa <RutaProtegida> en App.tsx
 function Access({ seller = false }: { seller?: boolean }) {
-  const { session } = useApp();
   usePage("Administrar | Clínica NutriDifs");
-  if (!session) return <Navigate to="/login" replace />;
-  if (session.role === "Cliente" || !session.role)
-    return <Navigate to="/perfil" replace />;
-  if (seller && session.role === "Administrador")
-    return <Navigate to="/administrar" replace />;
-  if (!seller && session.role === "Vendedor")
-    return <Navigate to="/vendedor" replace />;
   return <Management seller={seller} />;
 }
 export function Administrar() {

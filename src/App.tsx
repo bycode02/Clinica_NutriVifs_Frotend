@@ -3,6 +3,7 @@ import { useEffect } from 'react'
 import { Navigate, Route, Routes, useLocation } from 'react-router'
 import { Footer } from './components/Footer'
 import { Navbar } from './components/Navbar'
+import { RutaProtegida } from './components/RutaProtegida'
 import Agendar from './pages/Agendar'
 import Blog from './pages/Blog'
 import Carrito from './pages/Carrito'
@@ -37,10 +38,11 @@ function App() {
         <Route path="/consultas" element={<Consultas />} />
         <Route path="/contactanos" element={<Contactanos />} />
         <Route path="/login" element={<Login />} />
-        <Route path="/administrar" element={<Administrar />} />
-        <Route path="/vendedor" element={<Vendedor />} />
-        <Route path="/pacientes" element={<Pacientes />} />
-        <Route path="/perfil" element={<Perfil />} />
+        {/* Rutas protegidas: sin sesión van al login; con otro rol, "No tienes permiso" */}
+        <Route path="/administrar" element={<RutaProtegida roles={['Administrador']}><Administrar /></RutaProtegida>} />
+        <Route path="/vendedor" element={<RutaProtegida roles={['Vendedor']}><Vendedor /></RutaProtegida>} />
+        <Route path="/pacientes" element={<RutaProtegida roles={['Administrador']}><Pacientes /></RutaProtegida>} />
+        <Route path="/perfil" element={<RutaProtegida><Perfil /></RutaProtegida>} />
         <Route path="/productos" element={<Productos />} />
         <Route path="/registro" element={<Registro />} />
         <Route path="/quienes-somos" element={<QuienesSomos />} />
